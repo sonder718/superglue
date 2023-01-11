@@ -28,7 +28,7 @@ if __name__ == '__main__':
         '--input_dir', type=str, default='assets/phototourism_sample_images',
         help='Path to the directory that contains the images')
     parser.add_argument(
-        '--output_dir', type=str, default='dump_homo_pairs/',
+        '--output_dir', type=str, default='eval/dump_homo_pairs/',
         help='Path to the directory in which the .npz results and optionally,'
              'the visualization images are written')
 
@@ -45,7 +45,7 @@ if __name__ == '__main__':
         help='Resize the image after casting uint8 to float')
 
     parser.add_argument(
-        '--superglue', default='output/train/default/weights/best.pt',
+        '--superglue', default='models/weights/superglue_outdoor.pth',
         help='SuperGlue weights')
     parser.add_argument(
         '--max_keypoints', type=int, default=1024,

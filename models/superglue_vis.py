@@ -45,8 +45,14 @@ from pathlib import Path
 import torch
 from torch import nn
 import torch_scatter as ts
+import cv2
+import numpy as np
 
 cross_or_self=0
+l_img=0
+r_img=0
+head_num=0
+data_g=0
 class LayerNorm(nn.Module):
     "Construct a layernorm module (See citation for details)."
     def __init__(self, features, eps=1e-6):
@@ -102,8 +108,31 @@ def attention(query, key, value):
     dim = query.shape[1]
     scores = torch.einsum('bdhn,bdhm->bhnm', query, key) / dim**.5
     prob = torch.nn.functional.softmax(scores, dim=-1)
+    vis_attention(prob,0)#可视化第0个特征点
     return torch.einsum('bhnm,bdhm->bdhn', prob, value), prob
 
+def vis_attention(prob,i):
+    #将prob转为numpy
+    prob=prob.cpu().detach().numpy()
+    #获取0头的第i个特征点的注意力
+    att_i=prob[0,0,i,:]
+    global data_g
+    #(1,20,20)变为(20,20)
+    kpts0=data_g['keypoints0'].squeeze(0).cpu().detach().numpy()
+    kpts1=data_g['keypoints1'].squeeze(0).cpu().detach().numpy()
+    
+    i_posi=kpts0[i]
+    img0=data_g['image0'].squeeze(0)
+    #img0维度从(1,10,20)变为(10,20,1)
+    img0=img0.permute(1,2,0)
+    img0=img0.cpu().detach().numpy()
+    img0=256*img0
+    #绘制i_posi的位置并保存
+    img0.astype(np.uint8)
+    cv2.circle(img0, (int(i_posi[0]),int(i_posi[1])), 5, (0, 0, 255), -1)
+    cv2.imwrite('img0.jpg',img0)
+    
+    return 0
 
 class MultiHeadedAttention(nn.Module):
     """ Multi-head attention to increase model expressivitiy """
@@ -149,6 +178,8 @@ class AttentionalGNN(nn.Module):
                 src0, src1 = desc1, desc0
             else:  # if name == 'self':
                 src0, src1 = desc0, desc1
+            global cross_or_self
+            cross_or_self=name            
             delta0, delta1 = layer(desc0, src0), layer(desc1, src1)
             desc0, desc1 = (desc0 + delta0), (desc1 + delta1)
         return desc0, desc1
@@ -251,6 +282,8 @@ class SuperGlue(nn.Module):
         """Run SuperGlue on a pair of keypoints and descriptors"""
         if kwargs.get('mode', 'test') == "train":
             return self.forward_train(data)
+        global data_g
+        data_g=data
         desc0, desc1 = data['descriptors0'], data['descriptors1']
         kpts0, kpts1 = data['keypoints0'], data['keypoints1']
         if kpts0.shape[1] == 0 or kpts1.shape[1] == 0:  # no keypoints
