@@ -47,12 +47,17 @@ from torch import nn
 import torch_scatter as ts
 import cv2
 import numpy as np
+from utils.common import (plot_image_pair,plot_keypoints)
+import matplotlib.pyplot as plt
+import matplotlib
 
 cross_or_self=0
 l_img=0
 r_img=0
 head_num=0
 data_g=0
+cur_layer=0
+c_img=0
 class LayerNorm(nn.Module):
     "Construct a layernorm module (See citation for details)."
     def __init__(self, features, eps=1e-6):
@@ -108,7 +113,7 @@ def attention(query, key, value):
     dim = query.shape[1]
     scores = torch.einsum('bdhn,bdhm->bhnm', query, key) / dim**.5
     prob = torch.nn.functional.softmax(scores, dim=-1)
-    vis_attention(prob,0)#可视化第0个特征点
+    vis_attention(prob,1)#可视化第0个特征点
     return torch.einsum('bhnm,bdhm->bdhn', prob, value), prob
 
 def vis_attention(prob,i):
@@ -116,21 +121,60 @@ def vis_attention(prob,i):
     prob=prob.cpu().detach().numpy()
     #获取0头的第i个特征点的注意力
     att_i=prob[0,0,i,:]
-    global data_g
-    #(1,20,20)变为(20,20)
-    kpts0=data_g['keypoints0'].squeeze(0).cpu().detach().numpy()
-    kpts1=data_g['keypoints1'].squeeze(0).cpu().detach().numpy()
-    
-    i_posi=kpts0[i]
-    img0=data_g['image0'].squeeze(0)
-    #img0维度从(1,10,20)变为(10,20,1)
-    img0=img0.permute(1,2,0)
-    img0=img0.cpu().detach().numpy()
-    img0=256*img0
-    #绘制i_posi的位置并保存
-    img0.astype(np.uint8)
-    cv2.circle(img0, (int(i_posi[0]),int(i_posi[1])), 5, (0, 0, 255), -1)
-    cv2.imwrite('img0.jpg',img0)
+    global data_g,cur_layer,cross_or_self,c_img
+    kpts0=data_g['keypoints0'][0].cpu().numpy()
+    kpts1=data_g['keypoints1'][0].cpu().numpy()
+    demo_1=cv2.imread('mine/demo_1.jpg')
+    demo_2=cv2.imread('mine/demo_2.jpg')
+    demo_1=cv2.resize(demo_1,(640, 480))
+    demo_2=cv2.resize(demo_2,(640, 480))
+    #bgr转rgb
+    demo_1=cv2.cvtColor(demo_1,cv2.COLOR_BGR2RGB)
+    demo_2=cv2.cvtColor(demo_2,cv2.COLOR_BGR2RGB)
+    plot_image_pair([demo_1, demo_2])
+    # plot_keypoints(kpts0, kpts1, color='k', ps=4)
+    plot_keypoints(kpts0, kpts1, color='w', ps=2) 
+    if cross_or_self=='self' and c_img=='l':
+        #在ax[0]中绘制第i个特征点
+        ax = plt.gcf().axes
+        ax[0].scatter(kpts0[i, 0], kpts0[i, 1], c='r', s=4)
+        for a_i in range(len(att_i)):
+            if att_i[a_i]>(1/att_i.shape[0]):
+                #显示编号
+                # ax[0].text(kpts0[a_i, 0], kts0[a_i, 1], a_i, fontsize=8)
+                #设置att_i[i]值越大,利用sigmoid函数实现线宽越大
+                sg=1/(1+np.exp(-att_i[a_i]))
+                ax[0].plot([kpts0[i, 0], kpts0[a_i, 0]], [kpts0[i, 1], kpts0[a_i, 1]], c='r', linewidth=(sg))
+                #sigmoid函数
+                #np中的sigmoid函数
+                # ax[0].plot([kpts0[i, 0], kpts0[a_i, 0]], [kpts0[i, 1], kpts0[a_i, 1]], c='r', linewidth=att_i[a_i]*5)
+
+        #设置清晰度
+        plt.savefig('mine_out/self_att_{}_curlayer{}.jpg'.format(i,cur_layer),dpi=300)
+        plt.close()
+        return 0
+    if cross_or_self=='cross' and c_img=='l':
+        fig = plt.gcf()        
+        ax = plt.gcf().axes
+        fig.canvas.draw()
+        transFigure = fig.transFigure.inverted()
+        fkpts0 = transFigure.transform(ax[0].transData.transform(kpts0))
+        fkpts1 = transFigure.transform(ax[1].transData.transform(kpts1))
+        
+        ax[0].scatter(kpts0[i, 0], kpts0[i, 1], c='r', s=4)
+        for a_i in range(len(att_i)):
+            if att_i[a_i]>(1/att_i.shape[0]):
+                #显示编号
+                #设置att_i[i]值越大，连线越粗
+                # ax[0].plot([kpts0[i, 0], kpts1[a_i, 0]], [kpts0[i, 1], kpts1[a_i, 1]], c='r', linewidth=att_i[a_i]*20)
+                sg=1/(1+np.exp(-att_i[a_i]))
+                fig.lines.append(matplotlib.lines.Line2D(
+                    (fkpts0[i, 0], fkpts1[a_i, 0]), (fkpts0[i, 1], fkpts1[a_i, 1]), zorder=1,
+                    transform=fig.transFigure, c='r', linewidth=sg))
+        #设置清晰度
+        plt.savefig('mine_out/cross_att_{}_curlayer{}.jpg'.format(i,cur_layer),dpi=300)
+        plt.close()
+        return 0
     
     return 0
 
@@ -173,15 +217,23 @@ class AttentionalGNN(nn.Module):
         self.names = layer_names
 
     def forward(self, desc0, desc1):
+        layer_num=0
         for layer, name in zip(self.layers, self.names):
             if name == 'cross':
                 src0, src1 = desc1, desc0
             else:  # if name == 'self':
                 src0, src1 = desc0, desc1
-            global cross_or_self
-            cross_or_self=name            
-            delta0, delta1 = layer(desc0, src0), layer(desc1, src1)
+            global cross_or_self,cur_layer
+            cross_or_self=name
+            cur_layer=layer_num            
+            # delta0, delta1 = layer(desc0, src0), layer(desc1, src1)
+            global c_img
+            c_img='l'
+            delta0= layer(desc0, src0)
+            c_img='r'
+            delta1 = layer(desc1, src1)
             desc0, desc1 = (desc0 + delta0), (desc1 + delta1)
+            layer_num+=1
         return desc0, desc1
 
 
