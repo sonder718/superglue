@@ -113,7 +113,7 @@ def attention(query, key, value):
     dim = query.shape[1]
     scores = torch.einsum('bdhn,bdhm->bhnm', query, key) / dim**.5
     prob = torch.nn.functional.softmax(scores, dim=-1)
-    vis_attention(prob,1)#可视化第0个特征点
+    vis_attention(prob,556)#可视化第0个特征点
     return torch.einsum('bhnm,bdhm->bdhn', prob, value), prob
 
 def vis_attention(prob,i):
@@ -141,7 +141,7 @@ def vis_attention(prob,i):
         for a_i in range(len(att_i)):
             if att_i[a_i]>(1/att_i.shape[0]):
                 #显示编号
-                # ax[0].text(kpts0[a_i, 0], kts0[a_i, 1], a_i, fontsize=8)
+                # ax[0].text(kpts0[a_i, 0], kpts0[a_i, 1], a_i, fontsize=8)
                 #设置att_i[i]值越大,利用sigmoid函数实现线宽越大
                 sg=1/(1+np.exp(-att_i[a_i]))
                 ax[0].plot([kpts0[i, 0], kpts0[a_i, 0]], [kpts0[i, 1], kpts0[a_i, 1]], c='r', linewidth=(sg))

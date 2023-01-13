@@ -3,6 +3,7 @@
 *.swp
 
 output/
+mine_out/
 .vscode/
 images/
 debug/
