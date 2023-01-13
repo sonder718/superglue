@@ -45,7 +45,7 @@ if __name__ == '__main__':
         help='Resize the image after casting uint8 to float')
 
     parser.add_argument(
-        '--superglue', default='models/weights/superglue_outdoor.pth',
+        '--superglue' ,default='/root/autodl-tmp/output/train/default/weights/best.pt',
         help='SuperGlue weights')
     parser.add_argument(
         '--max_keypoints', type=int, default=1024,
@@ -309,3 +309,4 @@ if __name__ == '__main__':
         print('AUC@5\t AUC@10\t AUC@25\t Prec\t Recall\t')
         print('{:.2f}\t {:.2f}\t {:.2f}\t {:.2f}\t {:.2f}\t'.format(
             aucs_ransac[0], aucs_ransac[1], aucs_ransac[2], prec, rec))
+        
