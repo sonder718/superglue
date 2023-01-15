@@ -80,7 +80,7 @@ if __name__ == '__main__':
     #     '--input_dir', type=str, default='assets/freiburg_sequence',
     #     help='Path to the directory that contains the images')
     parser.add_argument(
-        '--output_dir', type=str, default='dump_match_pairs_1101/',
+        '--output_dir', type=str, default='eval/dump_match_pairs_113_mine/',
         help='Path to the directory in which the .npz results and optionally,'
              'the visualization images are written')
 

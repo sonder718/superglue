@@ -5,6 +5,8 @@ import os
 import torch.backends.cudnn as cudnn
 from tqdm import tqdm
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.tensorboard import SummaryWriter   
+
 import argparse
 import torch.distributed as dist
 import yaml
@@ -32,6 +34,8 @@ def change_lr(epoch, config, optimizer):
         print("Changed learning rate to {}".format(c_lr))
 
 def train(config, rank):
+    writer = SummaryWriter('./log')
+
     is_distributed = (rank >=0)
     save_dir = Path(config['train_params']['save_dir'])
     weight_dir = save_dir / "weights"
@@ -121,7 +125,8 @@ def train(config, rank):
             pbar = tqdm(pbar, total=num_batches)
         optimizer.zero_grad()
         mloss = torch.zeros(6, device=device)
-        if rank in [-1, 0]: print(('\n' + '%10s' * 9) % ('Epoch', 'gpu_mem', 'Iteration','PosLoss', 'NegLoss', 'TotLoss', 'Dtime', 'Ptime', 'Mtime'))
+        if rank in [-1, 0]: 
+            print(('\n' + '%10s' * 9) % ('Epoch', 'gpu_mem', 'Iteration','PosLoss', 'NegLoss', 'TotLoss', 'Dtime', 'Ptime', 'Mtime'))
         t5 = time_synchronized()
         for i, (orig_warped, homographies) in pbar:
             ni = i + num_batches * epoch
@@ -180,6 +185,7 @@ def train(config, rank):
                 if ((i+1) % config['train_params']['log_interval']) == 0:
                     write_str = "Epoch: {} Iter: {}, Loss: {}\n".format(epoch, i, mloss[0].item())
                     results_file.write(write_str)
+                    writer.add_scalar('Loss', mloss[0].item(), epoch)
                 if ((i+1) % 2000) == 0:
                     ckpt = {'epoch': epoch,
                             'iter': i,
@@ -199,6 +205,8 @@ def train(config, rank):
                 else:
                     eval_superglue = superglue_model.module if is_distributed else superglue_model
                 results = test_model(val_dataloader, superpoint_model, eval_superglue, config['train_params']['val_images_count'], device)
+                writer.add_scalar('Loss', mloss[0].item(), epoch)
+
             ckpt = {'epoch': epoch,
                     'iter': -1,
                     'ema': ema.ema.state_dict() if ema else None,
