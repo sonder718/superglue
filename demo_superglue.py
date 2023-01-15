@@ -85,7 +85,7 @@ if __name__ == '__main__':
              'dimension, if -1, do not resize')
 
     parser.add_argument(
-        '--superglue', choices={'indoor', 'outdoor','coco_homo'},default='output/train/default/weights/best.pt',
+        '--superglue', choices={'indoor', 'outdoor','coco_homo'},default='outdoor',
         help='SuperGlue weights')
     parser.add_argument(
         '--max_keypoints', type=int, default=-1,
