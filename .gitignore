@@ -18,6 +18,7 @@ assets/outdoor_test_images/
 assets/sample_dataset
 Coco/
 coco_min/
+coco_minmin/
 gen_homos/
 *.zip
 eval/

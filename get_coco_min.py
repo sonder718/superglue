@@ -89,11 +89,11 @@ class COCO:
 
 coco = COCO('Coco/annotations/instances_train2017.json',
             origin_img_dir='Coco/train2017')               # 完整的coco数据集的图片和标注的路径
-coco.build('coco_min/train2017', 'coco_min/annotations/instances_train2017.json', 7392)  # 保存图片路径
+coco.build('coco_minmin/train2017', 'coco_minmin/annotations/instances_train2017.json', 1848)  # 保存图片路径
 
 coco = COCO('Coco/annotations/instances_val2017.json',
             origin_img_dir='Coco/val2017')               # 完整的coco数据集的图片和标注的路径
-coco.build('coco_min/val2017', 'coco_min/annotations/instances_val2017.json', 250)  # 保存图片路径
+coco.build('coco_minmin/val2017', 'coco_minmin/annotations/instances_val2017.json', 200)  # 保存图片路径
 
 
 # 在2017年数据集中,训练集118287张,验证5000张,测试集40670张.

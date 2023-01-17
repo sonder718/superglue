@@ -204,9 +204,16 @@ def train(config, rank):
                     eval_superglue = ema.ema
                 else:
                     eval_superglue = superglue_model.module if is_distributed else superglue_model
-                results = test_model(val_dataloader, superpoint_model, eval_superglue, config['train_params']['val_images_count'], device)
-                writer.add_scalar('Loss', mloss[0].item(), epoch)
-
+                results,aucs_dlt,aucs_ransac,prec,rec = test_model(val_dataloader, superpoint_model, eval_superglue, config['train_params']['val_images_count'], device)
+                writer.add_scalar('dlt_auc_5', aucs_dlt[0], epoch)
+                writer.add_scalar('dlt_auc_10', aucs_dlt[1], epoch)
+                writer.add_scalar('dlt_auc_25', aucs_dlt[2], epoch)
+                writer.add_scalar('ransac_auc_5', aucs_ransac[0], epoch)
+                writer.add_scalar('ransac_auc_10', aucs_ransac[1], epoch)
+                writer.add_scalar('ransac_auc_25', aucs_ransac[2], epoch)
+                writer.add_scalar('precision', prec, epoch)
+                writer.add_scalar('recall', rec, epoch)
+                
             ckpt = {'epoch': epoch,
                     'iter': -1,
                     'ema': ema.ema.state_dict() if ema else None,
