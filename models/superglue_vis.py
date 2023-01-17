@@ -167,12 +167,16 @@ class AttentionalPropagation(nn.Module):
         nn.init.constant_(self.mlp[-1].bias, 0.0)
         
         
-    def divide_graph(self, x_f, y_f):
+    def divide_graph(self, x_f, y_f,k_nn=3):
+        #全为1
         #判断x_f和y_f维度是否相同
         if x_f.shape != y_f.shape:
             x_y=torch.cat([x_f, y_f])
-            edge_index = knn_graph(x_y[0], k=3, loop=False)
+            n_xy=x_y[0].permute(1,0)
+
+            edge_index = knn_graph(n_xy, k=3, loop=False)
             Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
+            adj = Adj.toarray() 
 
             print('x_f.shape != y_f.shape,是cross attention')
             return 0
@@ -184,22 +188,25 @@ class AttentionalPropagation(nn.Module):
             # #对于distance中的每个向量，找到距离最近5个向量，对应位置置1
             # distance_sort = torch.argsort(distance, dim=1)#对distance中的每个向量，找到距离最近5个向量，对应位置置1
             # #对于x_f中的每个向量，找到距离最近5个y_f中的向量，在邻接矩阵A中对应位置置1
-            edge_index = knn_graph(x_f[0], k=3, loop=False)
-            #转邻接矩阵
+            
+            #(1,256)变为(256,1)
+            n_x_f=x_f[0].permute(1,0)
+            edge_index = knn_graph(n_x_f, k=k_nn, loop=False)
+            #转coo稀疏矩阵
             Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
+            #转为numpy矩阵
+            adj = Adj.toarray() 
             print('x_f.shape == y_f.shape,是self attention')
-        return []
+        return adj
     
     def attn_adj(self, query, key, value,agj):
         return 0
     def forward(self, x, source):
         #全连接图的注意力传播
         message = self.attn(x, source, source)
-        #全连接图划分为多个子图，生成邻接矩阵列表A,每个子图的邻接矩阵为A[i]，所有邻接矩阵之和为全连接图的邻接矩阵
-        Adi_Martrix=self.divide_graph(x, source)
         #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-        for i in range(len(Adi_Martrix)):
-            adj=Adi_Martrix[i]
+        for i in range(8,32,8):
+            adj=self.divide_graph(x, source,i)
             #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
             message = self.attn_adj(x, source, source,adj)
             #拼接子图特征向量
