@@ -130,10 +130,11 @@ class AttentionalPropagation(nn.Module):
         self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
         nn.init.constant_(self.mlp[-1].bias, 0.0)
 
+
     def forward(self, x, source):
         message = self.attn(x, source, source)
+                
         return self.mlp(torch.cat([x, message], dim=1))
-
 
 class AttentionalGNN(nn.Module):
     def __init__(self, feature_dim: int, layer_names: list, use_layernorm=False):

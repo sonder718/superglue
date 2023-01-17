@@ -1,44 +1,4 @@
-# %BANNER_BEGIN%
-# ---------------------------------------------------------------------
-# %COPYRIGHT_BEGIN%
-#
-#  Magic Leap, Inc. ("COMPANY") CONFIDENTIAL
-#
-#  Unpublished Copyright (c) 2020
-#  Magic Leap, Inc., All Rights Reserved.
-#
-# NOTICE:  All information contained herein is, and remains the property
-# of COMPANY. The intellectual and technical concepts contained herein
-# are proprietary to COMPANY and may be covered by U.S. and Foreign
-# Patents, patents in process, and are protected by trade secret or
-# copyright law.  Dissemination of this information or reproduction of
-# this material is strictly forbidden unless prior written permission is
-# obtained from COMPANY.  Access to the source code contained herein is
-# hereby forbidden to anyone except current COMPANY employees, managers
-# or contractors who have executed Confidentiality and Non-disclosure
-# agreements explicitly covering such access.
-#
-# The copyright notice above does not evidence any actual or intended
-# publication or disclosure  of  this source code, which includes
-# information that is confidential and/or proprietary, and is a trade
-# secret, of  COMPANY.   ANY REPRODUCTION, MODIFICATION, DISTRIBUTION,
-# PUBLIC  PERFORMANCE, OR PUBLIC DISPLAY OF OR THROUGH USE  OF THIS
-# SOURCE CODE  WITHOUT THE EXPRESS WRITTEN CONSENT OF COMPANY IS
-# STRICTLY PROHIBITED, AND IN VIOLATION OF APPLICABLE LAWS AND
-# INTERNATIONAL TREATIES.  THE RECEIPT OR POSSESSION OF  THIS SOURCE
-# CODE AND/OR RELATED INFORMATION DOES NOT CONVEY OR IMPLY ANY RIGHTS
-# TO REPRODUCE, DISCLOSE OR DISTRIBUTE ITS CONTENTS, OR TO MANUFACTURE,
-# USE, OR SELL ANYTHING THAT IT  MAY DESCRIBE, IN WHOLE OR IN PART.
-#
-# %COPYRIGHT_END%
-# ----------------------------------------------------------------------
-# %AUTHORS_BEGIN%
-#
-#  Originating Authors: Paul-Edouard Sarlin
-#
-# %AUTHORS_END%
-# --------------------------------------------------------------------*/
-# %BANNER_END%
+
 
 from copy import deepcopy
 from pathlib import Path
@@ -50,6 +10,9 @@ import numpy as np
 from utils.common import (plot_image_pair,plot_keypoints)
 import matplotlib.pyplot as plt
 import matplotlib
+from torch_cluster import knn_graph
+import torch_geometric 
+
 
 cross_or_self=0
 l_img=0
@@ -113,7 +76,7 @@ def attention(query, key, value):
     dim = query.shape[1]
     scores = torch.einsum('bdhn,bdhm->bhnm', query, key) / dim**.5
     prob = torch.nn.functional.softmax(scores, dim=-1)
-    vis_attention(prob,556)#可视化第0个特征点
+    # vis_attention(prob,556)#可视化第0个特征点
     return torch.einsum('bhnm,bdhm->bdhn', prob, value), prob
 
 def vis_attention(prob,i):
@@ -202,9 +165,46 @@ class AttentionalPropagation(nn.Module):
         self.attn = MultiHeadedAttention(num_heads, feature_dim)
         self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
         nn.init.constant_(self.mlp[-1].bias, 0.0)
+        
+        
+    def divide_graph(self, x_f, y_f):
+        #判断x_f和y_f维度是否相同
+        if x_f.shape != y_f.shape:
+            x_y=torch.cat([x_f, y_f])
+            edge_index = knn_graph(x_y[0], k=3, loop=False)
+            Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
 
+            print('x_f.shape != y_f.shape,是cross attention')
+            return 0
+        else:#self-attention
+            #初始化邻接矩阵A
+            # A=torch.zeros(x_f.shape[0],y_f.shape[0])
+            # #计算x_f中各个向量和y_f中各个向量的欧式距离
+            # distance = torch.cdist(x_f, y_f, p=2)#计算x_f中各个向量和y_f中各个向量的欧式距离
+            # #对于distance中的每个向量，找到距离最近5个向量，对应位置置1
+            # distance_sort = torch.argsort(distance, dim=1)#对distance中的每个向量，找到距离最近5个向量，对应位置置1
+            # #对于x_f中的每个向量，找到距离最近5个y_f中的向量，在邻接矩阵A中对应位置置1
+            edge_index = knn_graph(x_f[0], k=3, loop=False)
+            #转邻接矩阵
+            Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
+            print('x_f.shape == y_f.shape,是self attention')
+        return []
+    
+    def attn_adj(self, query, key, value,agj):
+        return 0
     def forward(self, x, source):
+        #全连接图的注意力传播
         message = self.attn(x, source, source)
+        #全连接图划分为多个子图，生成邻接矩阵列表A,每个子图的邻接矩阵为A[i]，所有邻接矩阵之和为全连接图的邻接矩阵
+        Adi_Martrix=self.divide_graph(x, source)
+        #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
+        for i in range(len(Adi_Martrix)):
+            adj=Adi_Martrix[i]
+            #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
+            message = self.attn_adj(x, source, source,adj)
+            #拼接子图特征向量
+            message=torch.cat([message, message], dim=1)   
+            
         return self.mlp(torch.cat([x, message], dim=1))
 
 
