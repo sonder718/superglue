@@ -177,7 +177,7 @@ class AttentionalPropagation(nn.Module):
     def __init__(self, feature_dim: int, num_heads: int, use_layernorm=False):
         super().__init__()
         self.attn = MultiHeadedAttention(num_heads, feature_dim)
-        self.div_num=3
+        self.div_num=1
         self.mlp = MLP([feature_dim*(self.div_num+1), feature_dim*(self.div_num+1), feature_dim], use_layernorm=use_layernorm)
 
         # self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
@@ -216,19 +216,19 @@ class AttentionalPropagation(nn.Module):
 
     def forward(self, x, source):
         #全连接图的注意力传播
-        # message = self.attn(x, source, source)
+        message = self.attn(x, source, source)
         #初始化message
-        message=None
-        #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-        for i in range(self.div_num):
-            adj=self.divide_graph(x, source,i*8+8)
-            #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-            message_tmp = self.attn(x, source, source,adj)
-            if message is None:
-                message=message_tmp
-            else:
-                #拼接子图特征向量   
-                message=torch.cat([message, message_tmp], dim=1)   
+        # message=None
+        # #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
+        # for i in range(self.div_num):
+        #     adj=self.divide_graph(x, source,i*8+8)
+        #     #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
+        #     message_tmp = self.attn(x, source, source,adj)
+        #     if message is None:
+        #         message=message_tmp
+        #     else:
+        #         #拼接子图特征向量   
+        #         message=torch.cat([message, message_tmp], dim=1)   
                     
         return self.mlp(torch.cat([x, message], dim=1))
 
