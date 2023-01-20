@@ -10,7 +10,7 @@ import numpy as np
 from utils.common import (plot_image_pair,plot_keypoints)
 import matplotlib.pyplot as plt
 import matplotlib
-from torch_cluster import knn_graph
+from torch_cluster import knn_graph,knn
 import torch_geometric 
 
 
@@ -85,7 +85,7 @@ def attention(query, key, value,adj=None):
         zero_vec=-1e12*torch.ones_like(scores)
         scores=torch.where(adj>0,scores,zero_vec)#将不相邻的点的注意力置为负无穷
     prob = torch.nn.functional.softmax(scores, dim=-1)
-    vis_attention(prob,1)
+    # vis_attention(prob,1)
 
     return torch.einsum('bhnm,bdhm->bdhn', prob, value), prob
 
@@ -177,7 +177,10 @@ class AttentionalPropagation(nn.Module):
     def __init__(self, feature_dim: int, num_heads: int, use_layernorm=False):
         super().__init__()
         self.attn = MultiHeadedAttention(num_heads, feature_dim)
-        self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
+        self.div_num=3
+        self.mlp = MLP([feature_dim*(self.div_num+1), feature_dim*(self.div_num+1), feature_dim], use_layernorm=use_layernorm)
+
+        # self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
         nn.init.constant_(self.mlp[-1].bias, 0.0)
         
         
@@ -185,15 +188,21 @@ class AttentionalPropagation(nn.Module):
         #全为1
         #判断x_f和y_f维度是否相同
         if x_f.shape != y_f.shape:
-            x_y=torch.cat([x_f, y_f])
-            n_xy=x_y[0].permute(1,0)
-
-            edge_index = knn_graph(n_xy, k=3, loop=False)
-            Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
+            n_x_f=x_f[0].permute(1,0)
+            n_y_f=y_f[0].permute(1,0)
+            edge_index=knn(n_y_f,n_x_f, k=k_nn)#根据（n_x_f->n_y_f）
+            Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index,num_nodes=max(n_x_f.shape[0],n_y_f.shape[0]))
             adj = Adj.toarray() 
+            #对adj进行切片，只保留前n_x_f.shape[0]行
+            adj=adj[:n_x_f.shape[0],:n_y_f.shape[0]]
+            # if adj.shape[0]==141:
+            #     print('adj.shape[0]==141')
+            # if adj.shape[1]==280:
+            #     print('adj.shape[1]==141')    
+            
 
-            print('x_f.shape != y_f.shape,是cross attention')
-            return 0
+            # print('x_f.shape != y_f.shape,是cross attention')
+            return adj
         else:#self-attention
             #(1,256)变为(256,1)
             n_x_f=x_f[0].permute(1,0)
@@ -202,20 +211,25 @@ class AttentionalPropagation(nn.Module):
             Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
             #转为numpy矩阵
             adj = Adj.toarray() 
-            print('x_f.shape == y_f.shape,是self attention')
+            # print('x_f.shape == y_f.shape,是self attention')
         return adj
 
     def forward(self, x, source):
         #全连接图的注意力传播
-        message = self.attn(x, source, source)
+        # message = self.attn(x, source, source)
+        #初始化message
+        message=None
         #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-        for i in range(8,32,8):
-            adj=self.divide_graph(x, source,i)
+        for i in range(self.div_num):
+            adj=self.divide_graph(x, source,i*8+8)
             #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-            message = self.attn(x, source, source,adj)
-            #拼接子图特征向量
-            message=torch.cat([message, message], dim=1)   
-            
+            message_tmp = self.attn(x, source, source,adj)
+            if message is None:
+                message=message_tmp
+            else:
+                #拼接子图特征向量   
+                message=torch.cat([message, message_tmp], dim=1)   
+                    
         return self.mlp(torch.cat([x, message], dim=1))
 
 

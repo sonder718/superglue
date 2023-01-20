@@ -16,7 +16,9 @@ import torch.optim as optim
 import sys
 import numpy as np
 from models.superpoint import SuperPoint
-from models.superglue import SuperGlue
+# from models.superglue import SuperGlue
+from models.superglue_vis import SuperGlue
+
 from utils.common import increment_path, init_seeds, clean_checkpoint, reduce_tensor, download_base_files, debug_image_plot, time_synchronized, test_model, ModelEMA
 from utils.preprocess_utils import torch_find_matches
 from utils.dataset import COCO_loader, COCO_valloader, collate_batch
