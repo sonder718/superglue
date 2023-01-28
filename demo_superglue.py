@@ -87,7 +87,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--superglue', choices={'indoor', 'outdoor','coco_homo'},default='outdoor',
         help='SuperGlue weights')
-    parser.add_argument(
+    parser.add_argument( 
         '--max_keypoints', type=int, default=-1,
         help='Maximum number of keypoints detected by Superpoint'
              ' (\'-1\' keeps all keypoints)')
