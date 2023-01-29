@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from torch_cluster import knn_graph,knn
 import torch_geometric 
-import time
+
 
 cross_or_self=0
 l_img=0
@@ -21,6 +21,7 @@ head_num=0
 data_g=0
 cur_layer=0
 c_img=0
+
 class LayerNorm(nn.Module):
     "Construct a layernorm module (See citation for details)."
     def __init__(self, features, eps=1e-6):
@@ -178,9 +179,8 @@ class AttentionalPropagation(nn.Module):
         super().__init__()
         self.attn = MultiHeadedAttention(num_heads, feature_dim)
         self.div_num=1
-        self.mlp = MLP([feature_dim*(self.div_num+1), feature_dim*(self.div_num+1), feature_dim], use_layernorm=use_layernorm)
-
-        # self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
+        # self.mlp = MLP([feature_dim*(self.div_num+1), feature_dim*(self.div_num+1), feature_dim], use_layernorm=use_layernorm)
+        self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
         nn.init.constant_(self.mlp[-1].bias, 0.0)
         
         
@@ -216,28 +216,19 @@ class AttentionalPropagation(nn.Module):
 
     def forward(self, x, source):
         #全连接图的注意力传播
-        t1=time.time()
         message = self.attn(x, source, source)
-        t2=time.time()
-        print('past attn time:',t2-t1)
         #初始化message
         # message=None
         # #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-        for i in range(self.div_num):
-            t1=time.time()
-            adj=self.divide_graph(x, source,i*8+8)
-            t2=time.time()
-            print(str(i*8+8)+'divide_graph time:',t2-t1)
-            #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-            t1=time.time()
-            message_tmp = self.attn(x, source, source,adj)
-            t2=time.time()
-            print(str(i*8+8)+'attn time:',t2-t1)
-            if message is None:
-                message=message_tmp
-            else:
-                #拼接子图特征向量   
-                message=torch.cat([message, message_tmp], dim=1)   
+        # for i in range(self.div_num):
+        #     adj=self.divide_graph(x, source,i*8+8)
+        #     #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
+        #     message_tmp = self.attn(x, source, source,adj)
+        #     if message is None:
+        #         message=message_tmp
+        #     else:
+        #         #拼接子图特征向量   
+        #         message=torch.cat([message, message_tmp], dim=1)   
                     
         return self.mlp(torch.cat([x, message], dim=1))
 
