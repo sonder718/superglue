@@ -173,7 +173,6 @@ class AttentionalPropagation(nn.Module):
             x_y=torch.cat([x_f, y_f])
             edge_index = knn_graph(x_y[0], k=3, loop=False)
             Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
-
             print('x_f.shape != y_f.shape,是cross attention')
             return 0
         else:#self-attention
