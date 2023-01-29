@@ -814,7 +814,7 @@ def test_model(test_loader, superpoint_model, superglue_model,val_count, device,
     print('AUC@5\t AUC@10\t AUC@25\t Prec\t Recall\t')
     print('{:.2f}\t {:.2f}\t {:.2f}\t {:.2f}\t {:.2f}\t'.format(
             aucs_ransac[0], aucs_ransac[1], aucs_ransac[2], prec, rec))
-    return results_dict
+    return results_dict,aucs_dlt,aucs_ransac,prec,rec
 
 
 def is_parallel(model):

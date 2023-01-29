@@ -10,7 +10,7 @@ import numpy as np
 from utils.common import (plot_image_pair,plot_keypoints)
 import matplotlib.pyplot as plt
 import matplotlib
-from torch_cluster import knn_graph
+from torch_cluster import knn_graph,knn
 import torch_geometric 
 
 
@@ -72,11 +72,21 @@ class KeypointEncoder(nn.Module):
         return self.encoder(torch.cat(inputs, dim=1))
 
 
-def attention(query, key, value):
+def attention(query, key, value,adj=None):
     dim = query.shape[1]
     scores = torch.einsum('bdhn,bdhm->bhnm', query, key) / dim**.5
+    if adj is not None:
+        #adj转为tensor
+        adj=torch.from_numpy(adj).cuda()
+        #拼接4个adj将(602,602)转为（4，602，602）
+        adj=torch.stack([adj,adj,adj,adj])
+        #增添一个维度，将（4，602，602）转为（1，4，602，602）
+        adj=adj.unsqueeze(0)
+        zero_vec=-1e12*torch.ones_like(scores)
+        scores=torch.where(adj>0,scores,zero_vec)#将不相邻的点的注意力置为负无穷
     prob = torch.nn.functional.softmax(scores, dim=-1)
-    # vis_attention(prob,556)#可视化第0个特征点
+    # vis_attention(prob,1)
+
     return torch.einsum('bhnm,bdhm->bdhn', prob, value), prob
 
 def vis_attention(prob,i):
@@ -151,11 +161,15 @@ class MultiHeadedAttention(nn.Module):
         self.merge = nn.Conv1d(d_model, d_model, kernel_size=1)
         self.proj = nn.ModuleList([deepcopy(self.merge) for _ in range(3)])
 
-    def forward(self, query, key, value):
+    def forward(self, query, key, value,adj=None):
         batch_dim = query.size(0)
         query, key, value = [l(x).view(batch_dim, self.dim, self.num_heads, -1)
                              for l, x in zip(self.proj, (query, key, value))]
-        x, _ = attention(query, key, value)
+        if adj is None:
+            x, _ = attention(query, key, value) 
+        else:
+            x, _ = attention(query, key, value, adj)    
+        
         return self.merge(x.contiguous().view(batch_dim, self.dim*self.num_heads, -1))
 
 
@@ -163,47 +177,59 @@ class AttentionalPropagation(nn.Module):
     def __init__(self, feature_dim: int, num_heads: int, use_layernorm=False):
         super().__init__()
         self.attn = MultiHeadedAttention(num_heads, feature_dim)
-        self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
+        self.div_num=1
+        self.mlp = MLP([feature_dim*(self.div_num+1), feature_dim*(self.div_num+1), feature_dim], use_layernorm=use_layernorm)
+
+        # self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim], use_layernorm=use_layernorm)
         nn.init.constant_(self.mlp[-1].bias, 0.0)
         
         
-    def divide_graph(self, x_f, y_f):
+    def divide_graph(self, x_f, y_f,k_nn=3):
+        #全为1
         #判断x_f和y_f维度是否相同
         if x_f.shape != y_f.shape:
-            x_y=torch.cat([x_f, y_f])
-            edge_index = knn_graph(x_y[0], k=3, loop=False)
-            Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
-            print('x_f.shape != y_f.shape,是cross attention')
-            return 0
+            n_x_f=x_f[0].permute(1,0)
+            n_y_f=y_f[0].permute(1,0)
+            edge_index=knn(n_y_f,n_x_f, k=k_nn)#根据（n_x_f->n_y_f）
+            Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index,num_nodes=max(n_x_f.shape[0],n_y_f.shape[0]))
+            adj = Adj.toarray() 
+            #对adj进行切片，只保留前n_x_f.shape[0]行
+            adj=adj[:n_x_f.shape[0],:n_y_f.shape[0]]
+            # if adj.shape[0]==141:
+            #     print('adj.shape[0]==141')
+            # if adj.shape[1]==280:
+            #     print('adj.shape[1]==141')    
+            
+
+            # print('x_f.shape != y_f.shape,是cross attention')
+            return adj
         else:#self-attention
-            #初始化邻接矩阵A
-            # A=torch.zeros(x_f.shape[0],y_f.shape[0])
-            # #计算x_f中各个向量和y_f中各个向量的欧式距离
-            # distance = torch.cdist(x_f, y_f, p=2)#计算x_f中各个向量和y_f中各个向量的欧式距离
-            # #对于distance中的每个向量，找到距离最近5个向量，对应位置置1
-            # distance_sort = torch.argsort(distance, dim=1)#对distance中的每个向量，找到距离最近5个向量，对应位置置1
-            # #对于x_f中的每个向量，找到距离最近5个y_f中的向量，在邻接矩阵A中对应位置置1
-            edge_index = knn_graph(x_f[0], k=3, loop=False)
-            #转邻接矩阵
+            #(1,256)变为(256,1)
+            n_x_f=x_f[0].permute(1,0)
+            edge_index = knn_graph(n_x_f, k=k_nn, loop=False)
+            #转coo稀疏矩阵
             Adj=torch_geometric.utils.to_scipy_sparse_matrix(edge_index)
-            print('x_f.shape == y_f.shape,是self attention')
-        return []
-    
-    def attn_adj(self, query, key, value,agj):
-        return 0
+            #转为numpy矩阵
+            adj = Adj.toarray() 
+            # print('x_f.shape == y_f.shape,是self attention')
+        return adj
+
     def forward(self, x, source):
         #全连接图的注意力传播
         message = self.attn(x, source, source)
-        #全连接图划分为多个子图，生成邻接矩阵列表A,每个子图的邻接矩阵为A[i]，所有邻接矩阵之和为全连接图的邻接矩阵
-        Adi_Martrix=self.divide_graph(x, source)
-        #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-        for i in range(len(Adi_Martrix)):
-            adj=Adi_Martrix[i]
-            #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
-            message = self.attn_adj(x, source, source,adj)
-            #拼接子图特征向量
-            message=torch.cat([message, message], dim=1)   
-            
+        #初始化message
+        # message=None
+        # #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
+        # for i in range(self.div_num):
+        #     adj=self.divide_graph(x, source,i*8+8)
+        #     #对每个子图进行注意力传播,得到子图的特征向量 (特征点数*特征维度)
+        #     message_tmp = self.attn(x, source, source,adj)
+        #     if message is None:
+        #         message=message_tmp
+        #     else:
+        #         #拼接子图特征向量   
+        #         message=torch.cat([message, message_tmp], dim=1)   
+                    
         return self.mlp(torch.cat([x, message], dim=1))
 
 
@@ -222,6 +248,7 @@ class AttentionalGNN(nn.Module):
                 src0, src1 = desc1, desc0
             else:  # if name == 'self':
                 src0, src1 = desc0, desc1
+                continue
             global cross_or_self,cur_layer
             cross_or_self=name
             cur_layer=layer_num            
